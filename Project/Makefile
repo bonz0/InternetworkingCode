@@ -6,7 +6,7 @@ all:
 	$(CC) server.c $(FUNC) $(CFLAGS) ftps
 	$(CC) client.c $(FUNC) $(CFLAGS) ftpc
 	$(CC) tcpd_client.c $(FUNC) $(CFLAGS) tcpd_client
-	$(CC) -O0 tcpd_server.c $(FUNC) $(CFLAGS) tcpd_server
+	$(CC) tcpd_server.c $(FUNC) $(CFLAGS) tcpd_server
 clean:
 	rm -rf ftp*
 	rm -rf tcpd_client

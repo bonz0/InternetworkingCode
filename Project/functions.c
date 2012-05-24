@@ -109,7 +109,23 @@ int RECV (int sockfd, void* buf, int len, unsigned int flags, struct sockaddr* f
 	return recvfrom(sockfd, buf, len, flags, from, fromlen);
 }
 
-void sendFromWindow(window* sendingWindow)
-{
-	int i, bytesSentToTroll;
+int windowWrappedAround (int base) {				// checks if the window has wrapped around the buffer or not
+	return ((base % CIRCULAR_BUFFER_SIZE) > ((base + WINDOW_SIZE) % CIRCULAR_BUFFER_SIZE));
+}
+
+int inWindow (int index, int base) {			// checks if an index is inside the window given the base
+	if (!windowWrappedAround(base)) {
+		return ((index >= base) && (index < base + WINDOW_SIZE));
+	}
+	else {
+		return (((index >= base) && (index < CIRCULAR_BUFFER_SIZE)) || ((index >= 0) && (index < (base + WINDOW_SIZE) % CIRCULAR_BUFFER_SIZE)));
+	}
+}
+
+void printWindow (int array[]) {
+	int i = 0;
+	for (i = 0; i < CIRCULAR_BUFFER_SIZE; i++) {
+		printf("%d ", array[i]);
+	}
+	printf("\n");
 }

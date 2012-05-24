@@ -17,7 +17,8 @@
 #define TROLL_PORT 9999
 #define SERVER_TROLL_PORT 3333
 #define BUFFER_SIZE 900
-#define WINDOW_SIZE 64
+#define WINDOW_SIZE 20
+#define CIRCULAR_BUFFER_SIZE 64
 
 struct mainData {
 	int SEQ;
@@ -43,13 +44,16 @@ typedef struct timerPacket {
 	double timeout;
 } timerPacket;
 
-typedef struct window {
+typedef struct {
 	int base;
-	int nextFree;
-	struct messageToTroll packetArray[64];
-} window;
+	int head;
+	struct messageToTroll packetArray[CIRCULAR_BUFFER_SIZE];
+	int ackBuffer[CIRCULAR_BUFFER_SIZE];
+} CircularBuffer;
 
 long getFileSize (char* fileName);		// returns the file size
 int SEND(int, const void*, int, unsigned int, const struct sockaddr*, socklen_t);
 int RECV(int, void *, int, unsigned int, struct sockaddr*, int*);
-void sendFromWindow (window *);			// stores a datagram in the window
+int windowWrappedAround (int);			// returns true if window has wrapped around the buffer
+int inWindow (int, int);			// returns true if index is inside the window
+void printWindow (int[]);			

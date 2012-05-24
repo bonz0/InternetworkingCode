@@ -12,7 +12,6 @@ int main(int argc, char *argv[])
 	struct messageToTroll datagramFromTroll;
 	int packetCount = 0, incorrectPacketCount = 0;
 	unsigned long receivedChecksum;
-	window receiveWindow;
 
 	// set bits to 0
 	memset(fileSize, 0, 10);
@@ -120,6 +119,7 @@ int main(int argc, char *argv[])
 	}
 	packetCount++;
 	receivedChecksum = crc((void *)&datagramFromTroll.payload, sizeof(datagramFromTroll.payload), 0);
+	printf("Seq %d checksum:%lu\n", datagramFromTroll.payload.SEQ, datagramFromTroll.checksum);
 	if (receivedChecksum != datagramFromTroll.checksum) {
 		printf("Error in FILE SIZE\n");
 		incorrectPacketCount++;
@@ -127,6 +127,17 @@ int main(int argc, char *argv[])
 	strcpy(fileSize, datagramFromTroll.payload.data);
 	printf("File size: %s\n", fileSize);
 	memset(&datagramFromTroll.payload, 0, sizeof(datagramFromTroll.payload));
+	memset(&ackToTroll.payload, 0, sizeof(ackToTroll.payload));
+	ackToTroll.payload.ACK = 1;
+	ackToTroll.payload.SEQ = 0;
+	ackToTroll.payload.size = 0;
+	ackToTroll.checksum = crc((void*)&ackToTroll.payload, sizeof(ackToTroll.payload), 0);
+	// send acknowledgement for file size
+	bytesSent = sendto(socketToTroll, (void*)&ackToTroll, sizeof(ackToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
+	if (bytesSent < 0) {
+		perror("Error: Unable to send ack for file size to troll!\n");
+		exit(-3);
+	}
 
 	// Send file size to ftps
 	bytesSent = sendto(socketToServer, fileSize, sizeof(fileSize), 0, (struct sockaddr*)&sockaddrToServer, sizeof(struct sockaddr_in));
@@ -143,14 +154,26 @@ int main(int argc, char *argv[])
 		exit(-8);
 	}
 	packetCount++;
-	strcpy(fileName, datagramFromTroll.payload.data);
 	receivedChecksum = crc((void *)&datagramFromTroll.payload, sizeof(datagramFromTroll.payload), 0);
+	printf("Seq %d checksum:%lu\n", datagramFromTroll.payload.SEQ, datagramFromTroll.checksum);
 	if (receivedChecksum != datagramFromTroll.checksum) {
 		printf("Error in FILE NAME\n");
 		incorrectPacketCount++;
 	}
+	strcpy(fileName, datagramFromTroll.payload.data);
 	printf("File name: %s\n", fileName);
 	memset(&datagramFromTroll.payload, 0, sizeof(datagramFromTroll.payload));
+	memset(&ackToTroll.payload, 0, sizeof(ackToTroll.payload));
+	ackToTroll.payload.ACK = 1;
+	ackToTroll.payload.SEQ = 1;
+	ackToTroll.payload.size = 0;
+	ackToTroll.checksum = crc((void*)&ackToTroll.payload, sizeof(ackToTroll.payload), 0);
+	// send acknowledgement for file name
+	bytesSent = sendto(socketToTroll, (void*)&ackToTroll, sizeof(ackToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
+	if (bytesSent < 0) {
+		perror("Error: Unable to send ack for file name to troll!\n");
+		exit(-3);
+	}
 
 	// Send file name to ftps 
 	bytesSent = sendto(socketToServer, fileName, sizeof(fileName), 0, (struct sockaddr*)&sockaddrToServer, sizeof(struct sockaddr_in));
@@ -173,24 +196,24 @@ int main(int argc, char *argv[])
 		if (bytesReceived > 0) {
 			packetCount++;
 			receivedChecksum = crc((void *)&datagramFromTroll.payload, sizeof(datagramFromTroll.payload), 0);
+			printf("Seq %d checksum:%lu\n", datagramFromTroll.payload.SEQ, datagramFromTroll.checksum);
 			if (receivedChecksum != datagramFromTroll.checksum) {
-				printf("Error in FILE\n");
+				printf("Error in FILE %d\n", datagramFromTroll.payload.SEQ);
 				incorrectPacketCount++;
 			}
 			else {
 				ackToTroll.payload.ACK = 1;
-				ackToTroll.payload.SEQ = packetCount;
+				ackToTroll.payload.SEQ = datagramFromTroll.payload.SEQ;
 				ackToTroll.payload.size = 0;
 				ackToTroll.checksum = crc((void*)&ackToTroll.payload, sizeof(ackToTroll.payload), 0);
 				// send acknowledgement for data
 				bytesSent = sendto(socketToTroll, (void*)&ackToTroll, sizeof(ackToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
 				if (bytesSent < 0) {
-					perror("Error: Unable to send ack for server port to troll!\n");
+					printf("Error: Unable to send ack for packet %d to troll!\n", ackToTroll.payload.SEQ);
 //					exit(-3);
 				}
 			}
 			// store in the window
-
 			memcpy(buffer, datagramFromTroll.payload.data, datagramFromTroll.payload.size);
 			bytesSent = sendto(socketToServer, buffer, datagramFromTroll.payload.size, 0, (struct sockaddr*)&sockaddrToServer, sizeof(struct sockaddr_in));
 		}
@@ -199,5 +222,6 @@ int main(int argc, char *argv[])
 	// close file and socket
 	close(socketFromTroll);
 	close(socketToServer);
+	close(socketToTroll);
 	return 0;
 }

@@ -76,7 +76,7 @@ int main(int argc, char *argv[])
 		exit(-5);
 	}
 	printf("Server IP address sent!\n");
-	sleep(2);
+	sleep(1);
 	
 	// Send server port
 	bytesSent = SEND(clientToTCPDClientSocket, serverPort, sizeof(serverPort), 0, (struct sockaddr*)&serverAddress, sizeof(struct sockaddr_in));
@@ -85,7 +85,7 @@ int main(int argc, char *argv[])
 		exit(-5);
 	}
 	printf("Server port sent!\n");
-	sleep(2);
+	sleep(1);
 
 	// Send file size
 	bytesSent = SEND(clientToTCPDClientSocket, fileSize, sizeof(fileSize), 0, (struct sockaddr*)&serverAddress, sizeof(struct sockaddr_in));
@@ -94,7 +94,7 @@ int main(int argc, char *argv[])
 		exit(-5);
 	}
 	printf("File size sent!\n");
-	sleep(2);
+	sleep(1);
 
 	// Send file name
 	bytesSent = SEND(clientToTCPDClientSocket, fileName, sizeof(fileName), 0, (struct sockaddr*)&serverAddress, sizeof(struct sockaddr_in));
@@ -103,14 +103,14 @@ int main(int argc, char *argv[])
 		exit(-6);
 	}
 	printf("File name sent!\n");
-	sleep(2);
+	sleep(1);
 
 	// Send file
 	bytesRead = fread(buffer, sizeof(char), sizeof(buffer), filePointer);
 	int packetCount = 0;
 	int totalPackets = (int)(getFileSize(argv[3])/900) + 1;
 	while (bytesRead > 0) {
-		usleep(100000);
+		usleep(50000);
 		bytesSent = SEND(clientToTCPDClientSocket, buffer, bytesRead, 0, (struct sockaddr*)&serverAddress, sizeof(struct sockaddr_in));
 		packetCount++;
 		printf("Packet %d / %d sent\n", packetCount, totalPackets);
