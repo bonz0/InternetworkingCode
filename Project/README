@@ -1,0 +1,15 @@
+TCP File transfer application.
+
+Name: Farhang Zia
+
+To compile the program, execute the following commands:
+	make clean
+	make
+
+To run the program execute the following in order:
+	On the server side:
+		./ftps <port number>
+	On the client side:
+		./ftpc <server's IP Address> <server's port number> <file name>
+
+The program will transfer the file passed as the command line argument and store it on the server with the name: "new<old file name>".
