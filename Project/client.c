@@ -67,7 +67,7 @@ int main(int argc, char *argv[])
 		perror("Error: Unable to send host IP address to tcpd_client\n");
 		exit(0);
 	}
-	sleep(1);
+	usleep(50000);
 
 	// Send server IP address
 	bytesSent = SEND(clientToTCPDClientSocket, serverIPAddress, sizeof(serverIPAddress), 0, (struct sockaddr*)&serverAddress, sizeof(struct sockaddr_in));
@@ -76,7 +76,7 @@ int main(int argc, char *argv[])
 		exit(-5);
 	}
 	printf("Server IP address sent!\n");
-	sleep(1);
+	usleep(50000);
 	
 	// Send server port
 	bytesSent = SEND(clientToTCPDClientSocket, serverPort, sizeof(serverPort), 0, (struct sockaddr*)&serverAddress, sizeof(struct sockaddr_in));
@@ -85,7 +85,7 @@ int main(int argc, char *argv[])
 		exit(-5);
 	}
 	printf("Server port sent!\n");
-	sleep(1);
+	usleep(50000);
 
 	// Send file size
 	bytesSent = SEND(clientToTCPDClientSocket, fileSize, sizeof(fileSize), 0, (struct sockaddr*)&serverAddress, sizeof(struct sockaddr_in));
@@ -94,7 +94,7 @@ int main(int argc, char *argv[])
 		exit(-5);
 	}
 	printf("File size sent!\n");
-	sleep(1);
+	usleep(50000);
 
 	// Send file name
 	bytesSent = SEND(clientToTCPDClientSocket, fileName, sizeof(fileName), 0, (struct sockaddr*)&serverAddress, sizeof(struct sockaddr_in));
@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
 		exit(-6);
 	}
 	printf("File name sent!\n");
-	sleep(1);
+	usleep(50000);
 
 	// Send file
 	bytesRead = fread(buffer, sizeof(char), sizeof(buffer), filePointer);

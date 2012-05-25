@@ -57,3 +57,4 @@ int RECV(int, void *, int, unsigned int, struct sockaddr*, int*);
 int windowWrappedAround (int);			// returns true if window has wrapped around the buffer
 int inWindow (int, int);			// returns true if index is inside the window
 void printWindow (int[]);			
+double getRTO(double, int);

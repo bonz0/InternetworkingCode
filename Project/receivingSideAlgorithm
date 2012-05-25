@@ -1,0 +1,44 @@
+when data is received from the troll
+{
+	if data is correct
+	{
+		send acknowledgement
+		receivingCircularBuffer.packetArray[datagram.payload.SEQ] = datagramFromTroll
+		ackBuffer[datagram.payload.SEQ] = 0
+		if(base == datagram.payload.seq)
+		{
+			if(!windowWrappedAround)
+			{
+				for (i = base; i < base + WINDOW_SIZE; i++)
+				{
+					if(ackBuffer[iii] == 0)
+					{
+						forward the packet
+						ackBuffer[iii] = -1
+						base = (base + 1) % CIRCULAR_BUFFER_SIZE
+					}
+				}
+			}
+			else
+			{
+				for(i = base; i < CIRCULAR_BUFFER_SIZE; i++)
+				{
+					if(ackBuffer[iii] == 0)
+					{
+						forward the packet
+						ackBuffer[iii] = -1
+						base = (base + 1) % CIRCULAR_BUFFER_SIZE
+					}
+				}
+				for(i = 0; i < (base + WINDOW_SIZE) % CIRCULAR_BUFFER_SIZE; i++)
+				{
+					if(ackBuffer[iii] == 0) {
+						forward the packet
+						ackBuffer[iii] = -1
+						base = (base + 1) % CIRCULAR_BUFFER_SIZE
+					}
+				}
+			}
+		}
+	}
+}

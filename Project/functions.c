@@ -6,6 +6,7 @@
 
 typedef  unsigned long  ub4;
 typedef  unsigned char  ub1;
+double rto = 6000;
 
 static const ub4 crctab[256] =
 {
@@ -110,6 +111,9 @@ int RECV (int sockfd, void* buf, int len, unsigned int flags, struct sockaddr* f
 }
 
 int windowWrappedAround (int base) {				// checks if the window has wrapped around the buffer or not
+	if (base == (CIRCULAR_BUFFER_SIZE - WINDOW_SIZE)) {
+		return 0;
+	}
 	return ((base % CIRCULAR_BUFFER_SIZE) > ((base + WINDOW_SIZE) % CIRCULAR_BUFFER_SIZE));
 }
 
@@ -120,6 +124,45 @@ int inWindow (int index, int base) {			// checks if an index is inside the windo
 	else {
 		return (((index >= base) && (index < CIRCULAR_BUFFER_SIZE)) || ((index >= 0) && (index < (base + WINDOW_SIZE) % CIRCULAR_BUFFER_SIZE)));
 	}
+}
+
+double getRTO(double m, int pktcntr) {
+	float a = 0, d = 3000, err;
+	const float g = 0.125;
+	const float h = 0.25;
+
+	if ( pktcntr == 0) {
+		printf("\nRTO:%f\n",rto);
+		return rto;
+	} 
+	else if(pktcntr == 1)
+	{
+		printf("Counter = 1\n");
+		a = 50;
+		if(m == 0.0) {
+			rto = 6000;
+		}
+		else {
+			printf("rto = m = %f\n", m);
+			rto = m;
+		}
+		//printf("\nRTO:%f\n",rto);
+		return rto;
+	}
+	else
+	{
+		err = m-a;
+		a = a + g * err;
+		d = d+h*(abs(err)-d);
+	}
+	rto = a + 4 * d;
+	printf("Else rto = %f\n", rto);
+	return rto;
+}
+
+double timeval_diff(struct timeval *end, struct timeval *start)
+{
+	return (end->tv_sec * 1000000 + end->tv_usec) - (start->tv_sec * 1000000 + start->tv_usec);
 }
 
 void printWindow (int array[]) {

@@ -11,8 +11,10 @@ int main(int argc, char *argv[])
 	int bytesSentToTroll, bytesSentToTimer, bytesReceivedFromTroll, bytesReceivedFromClient, bytesReceivedFromTimer, totalbytesReceivedFromClient = 0, selectReturnValue, packetCount = -1, packetToResend = -1; 
 	char buffer[BUFFER_SIZE], fileName[20], fileSize[10], serverIPAddress[15], serverPort[5], hostIpAddress[15];
 	unsigned long receivedChecksum;
+	struct timeval start, end;
 	fd_set socketReadSet, socketWriteSet;
-	int iii;
+	int iii, rttSequenceNumber;
+	double difference = 0.0;
 	CircularBuffer sendingCircularBuffer;
 	sendingCircularBuffer.head = 0;
 	sendingCircularBuffer.base = 0;
@@ -156,7 +158,7 @@ int main(int argc, char *argv[])
 
 	// send notification to timer
 	packetToTimer.SEQ = -1;
-	packetToTimer.timeout = 2000000.0;
+	packetToTimer.timeout = 6000.0;
 	bytesSentToTimer = sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
 	memset(&packetToTimer, 0, sizeof(packetToTimer));
 
@@ -262,13 +264,16 @@ int main(int argc, char *argv[])
 					printf("Head in window!\n");
 					// set up details of packet to be sent to the timer
 					packetToTimer.SEQ = packetCount % CIRCULAR_BUFFER_SIZE;
-					packetToTimer.timeout = 2000000.0;
+					packetToTimer.timeout = getRTO(difference, packetToTimer.SEQ);
+					printf("Timeout value = %f", getRTO(difference, packetToTimer.SEQ));
 					// send the packet to the troll
 					bytesSentToTroll = sendto(socketToTroll, (void*)&sendingCircularBuffer.packetArray[sendingCircularBuffer.head], sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
 					if (bytesSentToTroll < 0) {
 						printf("Error: Unable to send packet %d to troll!\n", sendingCircularBuffer.head);
 					}
 					else {
+						gettimeofday(&start, NULL);
+						rttSequenceNumber = sendingCircularBuffer.head;
 						printf("Packet %d sent to troll!\n", sendingCircularBuffer.head);
 						// mark packet as sent
 						sendingCircularBuffer.ackBuffer[sendingCircularBuffer.head] = 1;
@@ -284,7 +289,7 @@ int main(int argc, char *argv[])
 				if ((sendingCircularBuffer.base % CIRCULAR_BUFFER_SIZE) < (sendingCircularBuffer.base + WINDOW_SIZE) % CIRCULAR_BUFFER_SIZE) {
 					if ((sendingCircularBuffer.head >= sendingCircularBuffer.base) && (sendingCircularBuffer.head <= (sendingCircularBuffer.base + WINDOW_SIZE))) {
 						packetToTimer.SEQ = packetCount % CIRCULAR_BUFFER_SIZE;
-						packetToTimer.timeout = 2000000.0;
+						packetToTimer.timeout = 6000.0;
 						bytesSentToTroll = sendto(socketToTroll, (void*)&sendingCircularBuffer.packetArray[sendingCircularBuffer.head], sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
 						if (bytesSentToTroll < 0) {
 							printf("Error: Unable to send packet %d to troll!\n", sendingCircularBuffer.head);
@@ -311,10 +316,13 @@ int main(int argc, char *argv[])
 				printf("Error: Unable to RESEND packet %d to troll!\n", packetToResend);
 			}
 			else {
+				gettimeofday(&start, NULL);
+				rttSequenceNumber = packetToResend;
 				sendingCircularBuffer.ackBuffer[packetToResend] = 1;
 				printf("Packet %d RESENT to troll!\n", packetToResend);
 				packetToTimer.SEQ = packetToResend;
-				packetToTimer.timeout = 2000000.0;
+				packetToTimer.timeout = getRTO(difference, packetToResend);
+				printf("Timeout value: %f\n", packetToTimer.timeout);
 				sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
 			}
 		}
@@ -324,6 +332,8 @@ int main(int argc, char *argv[])
 			memset(&ackFromTroll.payload, 0, sizeof(ackFromTroll.payload));
 			recvfrom(socketFromTroll, (void*)&ackFromTroll, sizeof(ackFromTroll), 0, (struct sockaddr*)&sockaddrFromTroll, &fromLen);
 			receivedChecksum = crc((void*)&ackFromTroll.payload, sizeof(ackFromTroll.payload), 0);
+			gettimeofday(&end, NULL);
+			difference = timeval_diff(&end, &start);
 			if (receivedChecksum != ackFromTroll.checksum) {
 				printf("Error: Error in received acknowledgement!\n");
 			}
@@ -335,7 +345,9 @@ int main(int argc, char *argv[])
 				sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
 				printf("Before updating base:\n");
 				printWindow(sendingCircularBuffer.ackBuffer);
-				sendingCircularBuffer.ackBuffer[ackFromTroll.payload.SEQ] = 2;
+				if (inWindow(ackFromTroll.payload.SEQ, sendingCircularBuffer.base)) {
+					sendingCircularBuffer.ackBuffer[ackFromTroll.payload.SEQ] = 2;
+				}
 				printWindow(sendingCircularBuffer.ackBuffer);
 				while (sendingCircularBuffer.ackBuffer[sendingCircularBuffer.base] == 2) {		// move the window forward over the circular buffer
 					sendingCircularBuffer.ackBuffer[sendingCircularBuffer.base] = -1;
@@ -349,13 +361,15 @@ int main(int argc, char *argv[])
 					for (iii = sendingCircularBuffer.base; iii < (sendingCircularBuffer.base + WINDOW_SIZE) % CIRCULAR_BUFFER_SIZE; iii++) {		// send all unsent packets in newly moved window
 						if (sendingCircularBuffer.ackBuffer[iii] == 0) {
 							packetToTimer.SEQ = sendingCircularBuffer.packetArray[iii].payload.SEQ;
-							packetToTimer.timeout = 2000000.0;
+							packetToTimer.timeout = 6000.0;
 							// send the packet to the troll
 							bytesSentToTroll = sendto(socketToTroll, (void*)&sendingCircularBuffer.packetArray[iii], sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
 							if (bytesSentToTroll < 0) {
 								printf("Error: Unable to send packet %d to troll!\n", sendingCircularBuffer.packetArray[iii].payload.SEQ);
 							}
 							else {
+								gettimeofday(&start, NULL);
+								rttSequenceNumber = sendingCircularBuffer.packetArray[iii].payload.SEQ;
 								printf("Packet %d sent to troll due to window movement!\n", sendingCircularBuffer.packetArray[iii].payload.SEQ);
 								// mark packet as sent
 								sendingCircularBuffer.ackBuffer[iii] = 1;
@@ -371,13 +385,15 @@ int main(int argc, char *argv[])
 					for (iii = sendingCircularBuffer.base; iii < CIRCULAR_BUFFER_SIZE; iii++) {
 						if (sendingCircularBuffer.ackBuffer[iii] == 0) {
 							packetToTimer.SEQ = sendingCircularBuffer.packetArray[iii].payload.SEQ;
-							packetToTimer.timeout = 2000000.0;
+							packetToTimer.timeout = 6000.0;
 							// send the packet to the troll
 							bytesSentToTroll = sendto(socketToTroll, (void*)&sendingCircularBuffer.packetArray[iii], sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
 							if (bytesSentToTroll < 0) {
 								printf("Error: Unable to send packet %d to troll!\n", sendingCircularBuffer.packetArray[iii].payload.SEQ);
 							}
 							else {
+								gettimeofday(&start, NULL);
+								rttSequenceNumber = sendingCircularBuffer.packetArray[iii].payload.SEQ;
 								printf("Packet %d sent to troll due to window movement 1!\n", sendingCircularBuffer.packetArray[iii].payload.SEQ);
 								// mark packet as sent
 								sendingCircularBuffer.ackBuffer[iii] = 1;
@@ -389,13 +405,15 @@ int main(int argc, char *argv[])
 					for (iii = 0; iii < (sendingCircularBuffer.base + WINDOW_SIZE) % CIRCULAR_BUFFER_SIZE; iii++) {
 						if (sendingCircularBuffer.ackBuffer[iii] == 0) {
 							packetToTimer.SEQ = sendingCircularBuffer.packetArray[iii].payload.SEQ;
-							packetToTimer.timeout = 2000000.0;
+							packetToTimer.timeout = 6000.0;
 							// send the packet to the troll
 							bytesSentToTroll = sendto(socketToTroll, (void*)&sendingCircularBuffer.packetArray[iii], sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
 							if (bytesSentToTroll < 0) {
 								printf("Error: Unable to send packet %d to troll!\n", sendingCircularBuffer.packetArray[iii].payload.SEQ);
 							}
 							else {
+								gettimeofday(&start, NULL);
+								rttSequenceNumber = sendingCircularBuffer.packetArray[iii].payload.SEQ;
 								printf("Packet %d sent to troll due to window movement 2!\n", sendingCircularBuffer.packetArray[iii].payload.SEQ);
 								// mark packet as sent
 								sendingCircularBuffer.ackBuffer[iii] = 1;

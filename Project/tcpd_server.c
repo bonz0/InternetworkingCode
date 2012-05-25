@@ -12,6 +12,14 @@ int main(int argc, char *argv[])
 	struct messageToTroll datagramFromTroll;
 	int packetCount = 0, incorrectPacketCount = 0;
 	unsigned long receivedChecksum;
+	CircularBuffer receivingBuffer;
+	int iii;
+	receivingBuffer.base = 0;
+
+	for (iii = 0; iii < CIRCULAR_BUFFER_SIZE; iii++) {
+		receivingBuffer.ackBuffer[iii] = -1;
+	}
+	printWindow(receivingBuffer.ackBuffer);
 
 	// set bits to 0
 	memset(fileSize, 0, 10);
@@ -112,7 +120,7 @@ int main(int argc, char *argv[])
 	sockaddrToServer.sin_port = htons(atoi(serverPort));
 
 	// Receive file size
-	bytesReceived = recvfrom(socketFromTroll, (void*)&datagramFromTroll, sizeof(datagramFromTroll), 0, (struct sockaddr*)&sockaddrFromTroll, &fromLen);
+/*	bytesReceived = recvfrom(socketFromTroll, (void*)&datagramFromTroll, sizeof(datagramFromTroll), 0, (struct sockaddr*)&sockaddrFromTroll, &fromLen);
 	if (bytesReceived < 0) {
 		perror("Error: Unable to read file size socket communicating with TCPD_client!\n");
 		exit(-5);
@@ -182,12 +190,12 @@ int main(int argc, char *argv[])
 		exit(-9);
 	}
 	printf("File name sent to server side\n");
-
+*/
 	// Receive file
 	printf("Sending file to server side!\n");
 	
 	// Send all received bytes to server side
-	packetCount = 0;
+	packetCount = -1;
 	while(1) {
 		memset(&datagramFromTroll.payload, 0, sizeof(datagramFromTroll.payload));
 		memset(&ackToTroll.payload, 0, sizeof(ackToTroll.payload));
@@ -196,12 +204,13 @@ int main(int argc, char *argv[])
 		if (bytesReceived > 0) {
 			packetCount++;
 			receivedChecksum = crc((void *)&datagramFromTroll.payload, sizeof(datagramFromTroll.payload), 0);
-			printf("Seq %d checksum:%lu\n", datagramFromTroll.payload.SEQ, datagramFromTroll.checksum);
 			if (receivedChecksum != datagramFromTroll.checksum) {
 				printf("Error in FILE %d\n", datagramFromTroll.payload.SEQ);
+				printf("Error in packet number %d\n", packetCount % CIRCULAR_BUFFER_SIZE);
 				incorrectPacketCount++;
 			}
 			else {
+				printf("Packet %d received!\n", datagramFromTroll.payload.SEQ);
 				ackToTroll.payload.ACK = 1;
 				ackToTroll.payload.SEQ = datagramFromTroll.payload.SEQ;
 				ackToTroll.payload.size = 0;
@@ -210,12 +219,96 @@ int main(int argc, char *argv[])
 				bytesSent = sendto(socketToTroll, (void*)&ackToTroll, sizeof(ackToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
 				if (bytesSent < 0) {
 					printf("Error: Unable to send ack for packet %d to troll!\n", ackToTroll.payload.SEQ);
-//					exit(-3);
+				}
+				printf("Ack sent for %d\n", datagramFromTroll.payload.SEQ);
+				if((inWindow(datagramFromTroll.payload.SEQ, receivingBuffer.base) && receivingBuffer.ackBuffer[datagramFromTroll.payload.SEQ] != 0)) {
+//				if (receivingBuffer.ackBuffer[datagramFromTroll.payload.SEQ] != 0 && receivingBuffer.base <= datagramFromTroll.payload.SEQ) {
+					receivingBuffer.packetArray[datagramFromTroll.payload.SEQ] = datagramFromTroll;
+					receivingBuffer.ackBuffer[datagramFromTroll.payload.SEQ] = 0;
+				}
+				if (receivingBuffer.base == datagramFromTroll.payload.SEQ) {
+					printf("Base = SEQ = %d\n", datagramFromTroll.payload.SEQ);
+					printWindow(receivingBuffer.ackBuffer);
+					if (!windowWrappedAround(receivingBuffer.base)) {
+						printf("Window not wrapped around!\n");
+						if (receivingBuffer.base == CIRCULAR_BUFFER_SIZE - WINDOW_SIZE) {
+							for (iii = receivingBuffer.base; iii < CIRCULAR_BUFFER_SIZE; iii++) {
+								if (receivingBuffer.ackBuffer[iii] == 0) {
+									// FORWARD THE PACKET
+									bytesSent = sendto(socketToServer, &receivingBuffer.packetArray[iii].payload.data, datagramFromTroll.payload.size, 0, (struct sockaddr*)&sockaddrToServer, sizeof(struct sockaddr_in));
+									if (bytesSent < 0) {
+										printf("Error: Unable to forward packet number %d!\n", receivingBuffer.packetArray[iii].payload.SEQ);
+									}
+									else {
+										printf("Packet number %d forwarded!\n", receivingBuffer.packetArray[iii].payload.SEQ);
+										receivingBuffer.ackBuffer[iii] = -1;
+										receivingBuffer.base = (receivingBuffer.base + 1) % CIRCULAR_BUFFER_SIZE;
+									}
+								}
+								else {
+									break;
+								}
+							}
+						}
+						else {
+							for (iii = receivingBuffer.base; iii < (receivingBuffer.base + WINDOW_SIZE) % CIRCULAR_BUFFER_SIZE; iii++) {
+								if (receivingBuffer.ackBuffer[iii] == 0) {
+									// FORWARD THE PACKET
+									bytesSent = sendto(socketToServer, &receivingBuffer.packetArray[iii].payload.data, datagramFromTroll.payload.size, 0, (struct sockaddr*)&sockaddrToServer, sizeof(struct sockaddr_in));
+									if (bytesSent < 0) {
+										printf("Error: Unable to forward packet number %d!\n", receivingBuffer.packetArray[iii].payload.SEQ);
+									}
+									else {
+										printf("Packet number %d forwarded!\n", receivingBuffer.packetArray[iii].payload.SEQ);
+										receivingBuffer.ackBuffer[iii] = -1;
+										receivingBuffer.base = (receivingBuffer.base + 1) % CIRCULAR_BUFFER_SIZE;
+									}
+								}
+								else {
+									break;
+								}
+							}
+						}
+					}
+					else {
+						for (iii = receivingBuffer.base; iii < CIRCULAR_BUFFER_SIZE; iii++) {
+							if (receivingBuffer.ackBuffer[iii] == 0) {
+								// FORWARD THE PACKET
+								bytesSent = sendto(socketToServer, &receivingBuffer.packetArray[iii].payload.data, datagramFromTroll.payload.size, 0, (struct sockaddr*)&sockaddrToServer, sizeof(struct sockaddr_in));
+								if (bytesSent < 0) {
+									printf("Error: Unable to forward packet number %d!\n", receivingBuffer.packetArray[iii].payload.SEQ);
+								}
+								else {
+									receivingBuffer.ackBuffer[iii] = -1;
+									receivingBuffer.base = (receivingBuffer.base + 1) % CIRCULAR_BUFFER_SIZE;
+								}
+							}
+							else {
+								break;
+							}
+						}
+						for (iii = 0; iii < (receivingBuffer.base + WINDOW_SIZE) % CIRCULAR_BUFFER_SIZE; iii++) {
+							if (receivingBuffer.ackBuffer[iii] == 0) {
+								// FORWARD THE PACKET
+								bytesSent = sendto(socketToServer, &receivingBuffer.packetArray[iii].payload.data, datagramFromTroll.payload.size, 0, (struct sockaddr*)&sockaddrToServer, sizeof(struct sockaddr_in));
+								if (bytesSent < 0) {
+									printf("Error: Unable to forward packet number %d!\n", receivingBuffer.packetArray[iii].payload.SEQ);
+								}
+								else {
+									receivingBuffer.ackBuffer[iii] = -1;
+									receivingBuffer.base = (receivingBuffer.base + 1) % CIRCULAR_BUFFER_SIZE;
+								}
+							}
+							else {
+								break;
+							}
+						}
+					}
 				}
 			}
 			// store in the window
-			memcpy(buffer, datagramFromTroll.payload.data, datagramFromTroll.payload.size);
-			bytesSent = sendto(socketToServer, buffer, datagramFromTroll.payload.size, 0, (struct sockaddr*)&sockaddrToServer, sizeof(struct sockaddr_in));
+//			memcpy(buffer, datagramFromTroll.payload.data, datagramFromTroll.payload.size);
+//			bytesSent = sendto(socketToServer, buffer, datagramFromTroll.payload.size, 0, (struct sockaddr*)&sockaddrToServer, sizeof(struct sockaddr_in));
 		}
 	}
 

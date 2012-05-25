@@ -35,22 +35,22 @@ int main(void) {
 
 	while (1) {
 		timeOutForSelectFunction.tv_sec = 0;
-		timeOutForSelectFunction.tv_usec = DECREMENT_VALUE;		
+		timeOutForSelectFunction.tv_usec = DECREMENT_VALUE;	
 		FD_ZERO(&socketSet);
 		FD_SET(socketToReceiveFromTcpdClient, &socketSet);
 		gettimeofday(&startTimeForSelect, NULL);
 		selectReturnValue = select(socketToReceiveFromTcpdClient + 1, &socketSet, NULL, NULL, &timeOutForSelectFunction);
-		printf("Select returned: %d\n", selectReturnValue);
+//		printf("Select returned: %d\n", selectReturnValue);
 		if (selectReturnValue == -1) {
 			printf("ERROR: select returned -1\n");
 		}
 		else if (selectReturnValue == 0) {
-			printf("Calling tlist_clock when selectReturnValue: 0\n");
+//			printf("Calling tlist_clock when selectReturnValue: 0\n");
 			tlist_clock(list, (double) DECREMENT_VALUE);
 		}
 		else {
-			usleep(10000);		//sleep for 10000 micro seconds
-			printf("Waiting for data from tcpd client\n");
+//			usleep(10000);		//sleep for 10000 micro seconds
+//			printf("Waiting for data from tcpd client\n");
 			numberOfBytesReceived = recvfrom(socketToReceiveFromTcpdClient, &tcpkt, sizeof(tcpkt), 0, (struct sockaddr*)&timer_addr, &addr_len);
 			if(numberOfBytesReceived < 0) {
 				printf("No data received\n");
@@ -67,15 +67,6 @@ int main(void) {
 					printf("Number of nodes in list: %d\n", list->numtnodes);
 				}
 			}
-			/* 
-			 * if(numberOfBytesReceived = sizeof(int)) {
-			 *	acknowledgement received
-			 *	remove node from the list
-			 *  }
-			 *  else if(numberOfBytesReceived = sizeof(timer_client_pkt)) {
-			 *  	new packet has been sent
-			 *  	add a new node to the list
-			 */
 			else {
 //				tnode_ptr = create_tnode(tcpkt.seqnum,tcpkt.timeout);	
 				if (addTotlist(list,tnode_ptr) < 1) {
