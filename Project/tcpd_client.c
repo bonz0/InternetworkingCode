@@ -9,13 +9,16 @@ int main(int argc, char *argv[])
 	struct messageToTroll datagramToTroll, ackFromTroll;
 	timerPacket packetToTimer;
 	int bytesSentToTroll, bytesSentToTimer, bytesReceivedFromTroll, bytesReceivedFromClient, bytesReceivedFromTimer, totalbytesReceivedFromClient = 0, selectReturnValue, packetCount = -1, packetToResend = -1; 
-	char buffer[BUFFER_SIZE], fileName[20], fileSize[10], serverIPAddress[15], serverPort[5], hostIpAddress[15];
+	char buffer[BUFFER_SIZE], fileName[20], fileSize[10], serverIPAddress[15], serverPort[5], hostIpAddress[15], hostName[20];
 	unsigned long receivedChecksum;
+	struct hostent *he;
+	struct in_addr **addr_list;
 	struct timeval start, end;
 	fd_set socketReadSet, socketWriteSet;
-	int iii, rttSequenceNumber;
+	int iii, rttSequenceNumber = 0;
 	double difference = 0.0;
 	CircularBuffer sendingCircularBuffer;
+	int serverPortSent = 0;
 	sendingCircularBuffer.head = 0;
 	sendingCircularBuffer.base = 0;
 	for (iii = 0; iii < CIRCULAR_BUFFER_SIZE; iii++) {
@@ -97,11 +100,13 @@ int main(int argc, char *argv[])
 	// Receive server details: IP Address and port number
 	int fromLen = sizeof(struct sockaddr_in);
 
-	bytesReceivedFromClient = recvfrom(socketFromClient, hostIpAddress, sizeof(hostIpAddress), 0, (struct sockaddr*)&sockaddrFromClient, &fromLen);
-	if (bytesReceivedFromClient < 0) {
-		perror("Error: Unable to read host IP address!\n");
+	gethostname(hostName, sizeof(hostName));
+	if ((he = gethostbyname(hostName)) == NULL) {
+		printf("Error: Unable to get host IP address!\n");
 		exit(0);
 	}
+	addr_list = (struct in_addr **)he->h_addr_list;
+	strcpy(hostIpAddress, inet_ntoa(*addr_list[0]));
 
 	bytesReceivedFromClient = recvfrom(socketFromClient, serverIPAddress, sizeof(serverIPAddress), 0, (struct sockaddr*)&sockaddrFromClient, &fromLen);
 	if (bytesReceivedFromClient < 0) {
@@ -134,13 +139,51 @@ int main(int argc, char *argv[])
 	memset(datagramToTroll.payload.data, 0, sizeof(datagramToTroll.payload.data));
 	strcpy(datagramToTroll.payload.data, hostIpAddress);
 	datagramToTroll.payload.size = sizeof(hostIpAddress);
+	datagramToTroll.payload.SEQ = -2;
 	datagramToTroll.checksum = crc((void*)&datagramToTroll.payload, sizeof(datagramToTroll.payload), 0);
 
 	// send host IP address to TROLL
 	bytesSentToTroll = sendto(socketToTroll, (void*)&datagramToTroll, sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
 	if (bytesSentToTroll < 0) {
-		perror("Error: Unable to server IP address to troll!\n");
+		perror("Error: Unable to send host IP address to troll!\n");
 		exit(-6);
+	}
+	packetToTimer.SEQ = -2;
+	packetToTimer.timeout = 6000.0;
+	bytesSentToTimer = sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
+	while (1) {
+		FD_ZERO(&socketReadSet);
+		FD_SET(socketFromTroll, &socketReadSet);
+		FD_SET(socketFromTimer, &socketReadSet);
+
+		selectReturnValue = select(socketFromTroll + 1, &socketReadSet, NULL, NULL, NULL);
+		if (selectReturnValue < 0) {
+			printf("Error: Select 1 returned a negative value!\n");
+			exit(0);
+		}
+		else if (selectReturnValue == 0) {
+		
+		}
+		else {
+			if (FD_ISSET(socketFromTroll, &socketReadSet)) {
+				printf("ACK for host IP address received from troll\n");
+				recvfrom(socketFromTroll, (void*)&ackFromTroll, sizeof(ackFromTroll), 0, (struct sockaddr*)&sockaddrFromTroll, &fromLen);
+				packetToTimer.SEQ = -2;
+				packetToTimer.timeout = 0.0;
+				sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
+				break;
+			}
+			if (FD_ISSET(socketFromTimer, &socketReadSet)) {
+				bytesReceivedFromTimer = recvfrom(socketFromTimer, &packetToResend, sizeof(int), 0, (struct sockaddr*)&sockaddrFromTimer, &fromLen);
+				if (bytesReceivedFromTimer > 0) {
+					printf("Timeout occured for host IP address!\n");
+				}
+				packetToTimer.SEQ = -2;
+				packetToTimer.timeout = 6000.0;
+				sendto(socketToTroll, (void*)&datagramToTroll, sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
+				sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
+			}
+		}
 	}
 	printf("Host IP Address sent to server!\n");
 	memset(&datagramToTroll.payload, 0, sizeof(datagramToTroll.payload));
@@ -148,76 +191,60 @@ int main(int argc, char *argv[])
 	// send server port to troll
 	strcpy(datagramToTroll.payload.data, serverPort);
 	datagramToTroll.payload.size = sizeof(serverPort);
+	datagramToTroll.payload.SEQ = -1;
 	datagramToTroll.checksum = crc((void *)&datagramToTroll.payload, sizeof(datagramToTroll.payload), 0);
-	bytesSentToTroll = sendto(socketToTroll, (void*)&datagramToTroll, sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
-	if (bytesSentToTroll < 0) {
-		perror("Error: Unable to send server port number to troll!\n");
-		exit(-6);
-	}
-	printf("Server port sent to server\n");
-
-	// send notification to timer
+	
+	sendto(socketToTroll, (void*)&datagramToTroll, sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
 	packetToTimer.SEQ = -1;
 	packetToTimer.timeout = 6000.0;
 	bytesSentToTimer = sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
-	memset(&packetToTimer, 0, sizeof(packetToTimer));
+	while (1) {
+		FD_ZERO(&socketReadSet);
+		FD_SET(socketFromTroll, &socketReadSet);
+		FD_SET(socketFromTimer, &socketReadSet);
 
-	// receive ack for server port
-	bytesReceivedFromTroll = recvfrom(socketFromTroll, (void*)&ackFromTroll, sizeof(ackFromTroll), 0, (struct sockaddr*)&sockaddrFromTroll, &fromLen);
-	if (bytesReceivedFromTroll < 0) {
-		perror("Error: Unable to receive ack for server port from troll!\n");
-		exit(-4);
+		selectReturnValue = select(socketFromTroll + 1, &socketReadSet, NULL, NULL, NULL);
+		if (selectReturnValue < 0) {
+			printf("Error: Select 1 returned a negative value!\n");
+			exit(0);
+		}
+		else if (selectReturnValue == 0) {
+			
+		}
+		else {
+			if (FD_ISSET(socketFromTroll, &socketReadSet)) {
+				printf("ACK Received from troll\n");
+				recvfrom(socketFromTroll, (void*)&ackFromTroll, sizeof(ackFromTroll), 0, (struct sockaddr*)&sockaddrFromTroll, &fromLen);
+				receivedChecksum = crc((void*)&ackFromTroll.payload, sizeof(ackFromTroll.payload), 0);
+				if (receivedChecksum == ackFromTroll.checksum) {
+					if (ackFromTroll.payload.SEQ == -1) {
+						packetToTimer.SEQ = -1;
+						packetToTimer.timeout = 0.0;
+						sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
+						break;
+					}
+				}
+			}
+			if (FD_ISSET(socketFromTimer, &socketReadSet)) {
+				bytesReceivedFromTimer = recvfrom(socketFromTimer, &packetToResend, sizeof(int), 0, (struct sockaddr*)&sockaddrFromTimer, &fromLen);
+				if (bytesReceivedFromTimer > 0) {
+					printf("Timeout occured for server port!\n");
+				}
+				sendto(socketToTroll, (void*)&datagramToTroll, sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
+				sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
+			}
+		}
 	}
-	receivedChecksum = crc((void*)&ackFromTroll.payload, sizeof(ackFromTroll.payload), 0);
-	if (receivedChecksum != ackFromTroll.checksum) {
-		printf("Error: Error in ack for server port!\n");
-	}
-	printf("SEQ = %d\nACK = %d\n", ackFromTroll.payload.SEQ, ackFromTroll.payload.ACK);
+	printf("Server port sent to server\n");
+	
+/*	printf("SEQ = %d\nACK = %d\n", ackFromTroll.payload.SEQ, ackFromTroll.payload.ACK);
 	packetToTimer.SEQ = ackFromTroll.payload.SEQ;
 	packetToTimer.timeout = 0.0;
+*/
 
 	// send notification to timer to delete node
-	bytesSentToTimer = sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
+//	bytesSentToTimer = sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
 	
-	// Receive file size
-//	bytesReceivedFromClient = recvfrom(socketFromClient, fileSize, sizeof(fileSize), 0, (struct sockaddr*)&sockaddrFromClient, &fromLen);
-//	if (bytesReceivedFromClient < 0) {
-//		perror("Error: Unable to read file size socket communicating with client!\n");
-//		exit(-5);
-//	}
-//	printf("File size: %s\n", fileSize);
-
-	// Send file size to TROLL
-//	memset(&datagramToTroll.payload, 0, sizeof(datagramToTroll.payload));
-//	strcpy(datagramToTroll.payload.data, fileSize);
-//	datagramToTroll.payload.size = sizeof(fileSize);
-//	datagramToTroll.checksum = crc((void *)&datagramToTroll.payload, sizeof(datagramToTroll.payload), 0);
-/*	bytesSentToTroll = sendto(socketToTroll, (void*)&datagramToTroll, sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
-	if (bytesSentToTroll < 0) {
-		perror("Error: Unable to server IP address to troll!\n");
-		exit(-6);
-	}
-	printf("File size sent to server\n");
-	
-	// Receive file name
-	bytesReceivedFromClient = recvfrom(socketFromClient, fileName, sizeof(fileName), 0, (struct sockaddr*)&sockaddrFromClient, &fromLen);
-	if (bytesReceivedFromClient < 0) {
-		perror("Error: Unable to read file name from socket communicating with client!\n");
-		exit(-5);
-	}
-	printf("File name: %s\n", fileName);
-
-	memset(&datagramToTroll.payload, 0, sizeof(datagramToTroll.payload));
-	strcpy(datagramToTroll.payload.data, fileName);
-	datagramToTroll.payload.size = sizeof(fileName);
-	datagramToTroll.checksum = crc((void *)&datagramToTroll.payload, sizeof(datagramToTroll.payload), 0);
-	bytesSentToTroll = sendto(socketToTroll, (void*)&datagramToTroll, sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
-	if (bytesSentToTroll < 0) {
-		perror("Error: Unable to server IP address to troll!\n");
-		exit(-6);
-	}
-	printf("File name sent to server\n");
-*/	
 	// Receive file
 	printf("Sending file to server side!\n");
 	packetCount = -1;	
@@ -254,12 +281,6 @@ int main(int argc, char *argv[])
 				printf("Head = %d\n", sendingCircularBuffer.head);
 				sendingCircularBuffer.packetArray[sendingCircularBuffer.head] = datagramToTroll;
 
-				// If window is not wrapped around
-//				if ((sendingCircularBuffer.base % CIRCULAR_BUFFER_SIZE) < (sendingCircularBuffer.base + WINDOW_SIZE) % CIRCULAR_BUFFER_SIZE) {
-//				if (!windowWrappedAround(sendingCircularBuffer.base)) {
-
-					// if currently received packet (sendingCircularBuffer.packetArray[head] is inside the window) then we have to send it
-//					if ((sendingCircularBuffer.head >= sendingCircularBuffer.base) && (sendingCircularBuffer.head <= (sendingCircularBuffer.base + WINDOW_SIZE))) {
 				if (inWindow(sendingCircularBuffer.head, sendingCircularBuffer.base)) {
 					printf("Head in window!\n");
 					// set up details of packet to be sent to the timer
@@ -283,26 +304,6 @@ int main(int argc, char *argv[])
 						printf("Base: %d\n", sendingCircularBuffer.base);
 					}
 				}
-//				}
-
-/*
-				if ((sendingCircularBuffer.base % CIRCULAR_BUFFER_SIZE) < (sendingCircularBuffer.base + WINDOW_SIZE) % CIRCULAR_BUFFER_SIZE) {
-					if ((sendingCircularBuffer.head >= sendingCircularBuffer.base) && (sendingCircularBuffer.head <= (sendingCircularBuffer.base + WINDOW_SIZE))) {
-						packetToTimer.SEQ = packetCount % CIRCULAR_BUFFER_SIZE;
-						packetToTimer.timeout = 6000.0;
-						bytesSentToTroll = sendto(socketToTroll, (void*)&sendingCircularBuffer.packetArray[sendingCircularBuffer.head], sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
-						if (bytesSentToTroll < 0) {
-							printf("Error: Unable to send packet %d to troll!\n", sendingCircularBuffer.head);
-						}
-						else {
-							sendingCircularBuffer.packetArray[sendingCircularBuffer.head].payload.sent = 1;
-							sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
-						}
-					}
-				}
-				bytesSentToTroll = sendto(socketToTroll, (void*)&datagramToTroll, sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
-				bytesSentToTimer = sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
-*/
 			}
 
 		}
@@ -338,6 +339,9 @@ int main(int argc, char *argv[])
 				printf("Error: Error in received acknowledgement!\n");
 			}
 			else {
+				if (ackFromTroll.payload.SEQ == -1) {
+					continue;
+				}
 				printf("ACK received for SEQ = %d\n", ackFromTroll.payload.SEQ);
 				packetToTimer.SEQ = ackFromTroll.payload.SEQ;
 				packetToTimer.timeout = 0.0;

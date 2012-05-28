@@ -202,7 +202,8 @@ void tlist_clock(tlist *list, double decrement_value) {
 	tcpd_client_addr.sin_addr.s_addr = inet_addr(LOCALHOST);
 	/*list empty*/
 	if (list->head == NULL) {
-		printf("Delta list is empty\n");
+//		printf("Delta list is empty\n");
+		return;
 	} 
 	else {
 		/*update the time in the list*/

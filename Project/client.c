@@ -61,14 +61,6 @@ int main(int argc, char *argv[])
 	serverAddress.sin_addr.s_addr = inet_addr(LOCALHOST);
 	printf("Sending to server @%s:%d\n", serverIPAddress, atoi(serverPort));
 
-	// send host IP address
-	bytesSent = SEND(clientToTCPDClientSocket, hostIpAddress, sizeof(hostIpAddress), 0, (struct sockaddr*)&serverAddress, sizeof(struct sockaddr_in));
-	if (bytesSent < 0) {
-		perror("Error: Unable to send host IP address to tcpd_client\n");
-		exit(0);
-	}
-	usleep(50000);
-
 	// Send server IP address
 	bytesSent = SEND(clientToTCPDClientSocket, serverIPAddress, sizeof(serverIPAddress), 0, (struct sockaddr*)&serverAddress, sizeof(struct sockaddr_in));
 	if (bytesSent < 0) {
@@ -76,7 +68,7 @@ int main(int argc, char *argv[])
 		exit(-5);
 	}
 	printf("Server IP address sent!\n");
-	usleep(50000);
+	usleep(SLEEP_VALUE);
 	
 	// Send server port
 	bytesSent = SEND(clientToTCPDClientSocket, serverPort, sizeof(serverPort), 0, (struct sockaddr*)&serverAddress, sizeof(struct sockaddr_in));
@@ -85,7 +77,7 @@ int main(int argc, char *argv[])
 		exit(-5);
 	}
 	printf("Server port sent!\n");
-	usleep(50000);
+	usleep(3000000);
 
 	// Send file size
 	bytesSent = SEND(clientToTCPDClientSocket, fileSize, sizeof(fileSize), 0, (struct sockaddr*)&serverAddress, sizeof(struct sockaddr_in));
@@ -94,7 +86,7 @@ int main(int argc, char *argv[])
 		exit(-5);
 	}
 	printf("File size sent!\n");
-	usleep(50000);
+	usleep(SLEEP_VALUE);
 
 	// Send file name
 	bytesSent = SEND(clientToTCPDClientSocket, fileName, sizeof(fileName), 0, (struct sockaddr*)&serverAddress, sizeof(struct sockaddr_in));
@@ -103,14 +95,14 @@ int main(int argc, char *argv[])
 		exit(-6);
 	}
 	printf("File name sent!\n");
-	usleep(50000);
+	usleep(SLEEP_VALUE);
 
 	// Send file
 	bytesRead = fread(buffer, sizeof(char), sizeof(buffer), filePointer);
 	int packetCount = 0;
 	int totalPackets = (int)(getFileSize(argv[3])/900) + 1;
 	while (bytesRead > 0) {
-		usleep(50000);
+		usleep(SLEEP_VALUE);
 		bytesSent = SEND(clientToTCPDClientSocket, buffer, bytesRead, 0, (struct sockaddr*)&serverAddress, sizeof(struct sockaddr_in));
 		packetCount++;
 		printf("Packet %d / %d sent\n", packetCount, totalPackets);

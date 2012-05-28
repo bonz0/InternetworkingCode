@@ -10,7 +10,7 @@ int main(int argc, char *argv[])
 	int bytesSent, bytesReceived, totalBytesReceived = 0;
 	char buffer[BUFFER_SIZE], fileName[20], fileSize[10], serverIPAddress[15], serverPort[5], bigBuffer[1500], hostIPAddress[15];
 	struct messageToTroll datagramFromTroll;
-	int packetCount = 0, incorrectPacketCount = 0;
+	int packetCount = 0, incorrectPacketCount = 0, serverPortReceived = 0, hostIPAddressReceived = 0;
 	unsigned long receivedChecksum;
 	CircularBuffer receivingBuffer;
 	int iii;
@@ -60,137 +60,117 @@ int main(int argc, char *argv[])
 		exit(-4);
 	}
 	printf("Socket to communicate with Troll bound!\n");
-
-	// Receive server details: IP Address and port number
-	int fromLen = sizeof(struct sockaddr_in);
-	bytesReceived = recvfrom(socketFromTroll, (void*)&datagramFromTroll, sizeof(datagramFromTroll), 0, (struct sockaddr*)&sockaddrFromTroll, &fromLen);
-	if (bytesReceived < 0) {
-		perror("Error: Unable to read host IP Address socket communicating with client!\n");
-		exit(-4);
-	}
-	packetCount++;
-	strcpy(hostIPAddress, datagramFromTroll.payload.data);
-	receivedChecksum = crc((void *)&datagramFromTroll.payload, sizeof(datagramFromTroll.payload), 0);
-	if (receivedChecksum != datagramFromTroll.checksum) {
-		printf("Error in host IP Address\n");
-		incorrectPacketCount++;
-	}
-	printf("Receiving from IP Address: %s\n", hostIPAddress);
-	memset(&datagramFromTroll.payload, 0, sizeof(datagramFromTroll.payload));
-
-	// set up sockaddr details to send ACK to tcpd_client
-	sockaddrToTroll.sin_family = AF_INET;
-	sockaddrToTroll.sin_addr.s_addr = inet_addr(hostIPAddress);
-	sockaddrToTroll.sin_port = htons(TROLL_PORT);
-
+	
 	// set up details of message that is supposed to be sent to the troll
 	ackToTroll.trollHeader.sin_family = htons(AF_INET);
 	ackToTroll.trollHeader.sin_addr.s_addr = inet_addr(LOCALHOST);
 	ackToTroll.trollHeader.sin_port = htons(TCPD_CLIENT_ACK_PORT);
-
-	bytesReceived = recvfrom(socketFromTroll, (void*)&datagramFromTroll, sizeof(datagramFromTroll), 0, (struct sockaddr*)&sockaddrFromTroll, &fromLen);
-	if (bytesReceived < 0) {
-		perror("Error: Unable to read server port from socket!\n");
-		exit(-4);
+	ackToTroll.payload.ACK = 1;
+	// Receive server details: IP Address and port number
+	int fromLen = sizeof(struct sockaddr_in);
+	while (!(serverPortReceived && hostIPAddressReceived)) {
+		printf("Inside the while loop\n");
+		bytesReceived = recvfrom(socketFromTroll, (void*)&datagramFromTroll, sizeof(datagramFromTroll), 0, (struct sockaddr*)&sockaddrFromTroll, &fromLen);
+		receivedChecksum = crc((void *)&datagramFromTroll.payload, sizeof(datagramFromTroll.payload), 0);
+		if (receivedChecksum == datagramFromTroll.checksum) {
+			printf("Checksum correct\n");
+			if(datagramFromTroll.payload.SEQ == -2) {
+				printf("Checksum same. ACK for host IP address sent\n");
+				if (!hostIPAddressReceived) {
+					hostIPAddressReceived = 1;
+					strcpy(hostIPAddress, datagramFromTroll.payload.data);
+					sockaddrToTroll.sin_family = AF_INET;
+					sockaddrToTroll.sin_addr.s_addr = inet_addr(hostIPAddress);
+					sockaddrToTroll.sin_port = htons(TROLL_PORT);
+				}
+			}
+			else if (datagramFromTroll.payload.SEQ == -1) {
+				if (!serverPortReceived) {
+					serverPortReceived = 1;
+					strcpy(serverPort, datagramFromTroll.payload.data);
+				}
+			}
+			ackToTroll.payload.SEQ = datagramFromTroll.payload.SEQ;
+			sendto(socketToTroll, (void*)&ackToTroll, sizeof(ackToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
+		}
 	}
+	
+/*	bytesReceived = recvfrom(socketFromTroll, (void*)&datagramFromTroll, sizeof(datagramFromTroll), 0, (struct sockaddr*)&sockaddrFromTroll, &fromLen);
 	packetCount++;
 	receivedChecksum = crc((void *)&datagramFromTroll.payload, sizeof(datagramFromTroll.payload), 0);
-	if (receivedChecksum != datagramFromTroll.checksum) {
-		printf("Error in PORT NUMBER\n");
-		incorrectPacketCount++;
+	ackToTroll.payload.ACK = 1;
+	ackToTroll.payload.SEQ = -2;
+	ackToTroll.payload.size = 0;
+	ackToTroll.checksum = crc((void*)&ackToTroll.payload, sizeof(ackToTroll.payload), 0);
+	if (receivedChecksum == datagramFromTroll.checksum) {
+		printf("Check sums same. ACK for host IP address sent\n");
+		strcpy(hostIPAddress, datagramFromTroll.payload.data);
+		// set up sockaddr details to send ACK to tcpd_client
+		sockaddrToTroll.sin_family = AF_INET;
+		sockaddrToTroll.sin_addr.s_addr = inet_addr(hostIPAddress);
+		sockaddrToTroll.sin_port = htons(TROLL_PORT);
+		sendto(socketToTroll, (void*)&ackToTroll, sizeof(ackToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
 	}
-	strcpy(serverPort, datagramFromTroll.payload.data);
-	printf("Sending to Port: %s\n", serverPort);
+	else {
+		printf("-----RECEIVED HOST IP ADDRESS IS INCORRECT!------\n");
+		while (1) {
+			recvfrom(socketFromTroll, (void*)&datagramFromTroll, sizeof(datagramFromTroll), 0, (struct sockaddr*)&sockaddrFromTroll, &fromLen);
+			receivedChecksum = crc((void *)&datagramFromTroll.payload, sizeof(datagramFromTroll.payload), 0);
+			if (receivedChecksum == datagramFromTroll.checksum) {
+				printf("Checksum same. ACK for host IP address sent\n");
+				strcpy(hostIPAddress, datagramFromTroll.payload.data);
+				sockaddrToTroll.sin_family = AF_INET;
+				sockaddrToTroll.sin_addr.s_addr = inet_addr(hostIPAddress);
+				sockaddrToTroll.sin_port = htons(TROLL_PORT);
+				sendto(socketToTroll, (void*)&ackToTroll, sizeof(ackToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
+				break;
+			}
+		}
+	}
+	printf("Receiving from IP Address: %s\n", hostIPAddress);
 	memset(&datagramFromTroll.payload, 0, sizeof(datagramFromTroll.payload));
+
+	bytesReceived = recvfrom(socketFromTroll, (void*)&datagramFromTroll, sizeof(datagramFromTroll), 0, (struct sockaddr*)&sockaddrFromTroll, &fromLen);
+	packetCount++;
+	receivedChecksum = crc((void *)&datagramFromTroll.payload, sizeof(datagramFromTroll.payload), 0);
 	ackToTroll.payload.ACK = 1;
 	ackToTroll.payload.SEQ = -1;
 	ackToTroll.payload.size = 0;
 	ackToTroll.checksum = crc((void*)&ackToTroll.payload, sizeof(ackToTroll.payload), 0);
+	if (receivedChecksum == datagramFromTroll.checksum) {
+		printf("Check sums same. ACK for server port sent\n");
+		sendto(socketToTroll, (void*)&ackToTroll, sizeof(ackToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
+	}
+	else {
+		printf("-----RECEIVED SERVER PORT IS INCORRECT!------\n");
+		while (receivedChecksum != datagramFromTroll.checksum) {
+			recvfrom(socketFromTroll, (void*)&datagramFromTroll, sizeof(datagramFromTroll), 0, (struct sockaddr*)&sockaddrFromTroll, &fromLen);
+			receivedChecksum = crc((void *)&datagramFromTroll.payload, sizeof(datagramFromTroll.payload), 0);
+			if (receivedChecksum == datagramFromTroll.checksum) {
+				printf("Check sums same. ACK for server port sent\n");
+				sendto(socketToTroll, (void*)&ackToTroll, sizeof(ackToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
+				break;
+			}
+		}
+	}
+	strcpy(serverPort, datagramFromTroll.payload.data);
+	printf("Sending to Port: %s\n", serverPort);
+	memset(&datagramFromTroll.payload, 0, sizeof(datagramFromTroll.payload));
+	ackToTroll.checksum = crc((void*)&ackToTroll.payload, sizeof(ackToTroll.payload), 0);
 
 	// send acknowledgement for server port
-	bytesSent = sendto(socketToTroll, (void*)&ackToTroll, sizeof(ackToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
-	if (bytesSent < 0) {
-		perror("Error: Unable to send ack for server port to troll!\n");
-		exit(-3);
-	}
-
+//	bytesSent = sendto(socketToTroll, (void*)&ackToTroll, sizeof(ackToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
+//	if (bytesSent < 0) {
+//		perror("Error: Unable to send ack for server port to troll!\n");
+//		exit(-3);
+//	}
+	printf("Ack for server port sent to troll!\n");
+*/
 	// Set server details into struct
 	sockaddrToServer.sin_family = AF_INET;
 	sockaddrToServer.sin_addr.s_addr = inet_addr(LOCALHOST);
 	sockaddrToServer.sin_port = htons(atoi(serverPort));
 
-	// Receive file size
-/*	bytesReceived = recvfrom(socketFromTroll, (void*)&datagramFromTroll, sizeof(datagramFromTroll), 0, (struct sockaddr*)&sockaddrFromTroll, &fromLen);
-	if (bytesReceived < 0) {
-		perror("Error: Unable to read file size socket communicating with TCPD_client!\n");
-		exit(-5);
-	}
-	packetCount++;
-	receivedChecksum = crc((void *)&datagramFromTroll.payload, sizeof(datagramFromTroll.payload), 0);
-	printf("Seq %d checksum:%lu\n", datagramFromTroll.payload.SEQ, datagramFromTroll.checksum);
-	if (receivedChecksum != datagramFromTroll.checksum) {
-		printf("Error in FILE SIZE\n");
-		incorrectPacketCount++;
-	}
-	strcpy(fileSize, datagramFromTroll.payload.data);
-	printf("File size: %s\n", fileSize);
-	memset(&datagramFromTroll.payload, 0, sizeof(datagramFromTroll.payload));
-	memset(&ackToTroll.payload, 0, sizeof(ackToTroll.payload));
-	ackToTroll.payload.ACK = 1;
-	ackToTroll.payload.SEQ = 0;
-	ackToTroll.payload.size = 0;
-	ackToTroll.checksum = crc((void*)&ackToTroll.payload, sizeof(ackToTroll.payload), 0);
-	// send acknowledgement for file size
-	bytesSent = sendto(socketToTroll, (void*)&ackToTroll, sizeof(ackToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
-	if (bytesSent < 0) {
-		perror("Error: Unable to send ack for file size to troll!\n");
-		exit(-3);
-	}
-
-	// Send file size to ftps
-	bytesSent = sendto(socketToServer, fileSize, sizeof(fileSize), 0, (struct sockaddr*)&sockaddrToServer, sizeof(struct sockaddr_in));
-	if (bytesSent < 0) {
-		perror("Error: Unable to send file size to server!\n");
-		exit(-7);
-	}
-	printf("File size sent to server side\n");
-
-	// Receive file name
-	bytesReceived = recvfrom(socketFromTroll, (void*)&datagramFromTroll, sizeof(datagramFromTroll), 0, (struct sockaddr*)&sockaddrFromTroll, &fromLen);
-	if (bytesReceived < 0) {
-		perror("Error: Unable to read file name from socket communicating with client!\n");
-		exit(-8);
-	}
-	packetCount++;
-	receivedChecksum = crc((void *)&datagramFromTroll.payload, sizeof(datagramFromTroll.payload), 0);
-	printf("Seq %d checksum:%lu\n", datagramFromTroll.payload.SEQ, datagramFromTroll.checksum);
-	if (receivedChecksum != datagramFromTroll.checksum) {
-		printf("Error in FILE NAME\n");
-		incorrectPacketCount++;
-	}
-	strcpy(fileName, datagramFromTroll.payload.data);
-	printf("File name: %s\n", fileName);
-	memset(&datagramFromTroll.payload, 0, sizeof(datagramFromTroll.payload));
-	memset(&ackToTroll.payload, 0, sizeof(ackToTroll.payload));
-	ackToTroll.payload.ACK = 1;
-	ackToTroll.payload.SEQ = 1;
-	ackToTroll.payload.size = 0;
-	ackToTroll.checksum = crc((void*)&ackToTroll.payload, sizeof(ackToTroll.payload), 0);
-	// send acknowledgement for file name
-	bytesSent = sendto(socketToTroll, (void*)&ackToTroll, sizeof(ackToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
-	if (bytesSent < 0) {
-		perror("Error: Unable to send ack for file name to troll!\n");
-		exit(-3);
-	}
-
-	// Send file name to ftps 
-	bytesSent = sendto(socketToServer, fileName, sizeof(fileName), 0, (struct sockaddr*)&sockaddrToServer, sizeof(struct sockaddr_in));
-	if (bytesSent < 0) {
-		perror("Error: Unable to send file size to server!\n");
-		exit(-9);
-	}
-	printf("File name sent to server side\n");
-*/
 	// Receive file
 	printf("Sending file to server side!\n");
 	
@@ -200,6 +180,7 @@ int main(int argc, char *argv[])
 		memset(&datagramFromTroll.payload, 0, sizeof(datagramFromTroll.payload));
 		memset(&ackToTroll.payload, 0, sizeof(ackToTroll.payload));
 		memset(buffer, 0, sizeof(buffer));
+		ackToTroll.payload.ACK = 1;
 		bytesReceived = recvfrom(socketFromTroll, (void*)&datagramFromTroll, sizeof(datagramFromTroll), 0, (struct sockaddr*)&sockaddrFromTroll, &fromLen);
 		if (bytesReceived > 0) {
 			packetCount++;
@@ -211,20 +192,17 @@ int main(int argc, char *argv[])
 			}
 			else {
 				printf("Packet %d received!\n", datagramFromTroll.payload.SEQ);
-				ackToTroll.payload.ACK = 1;
 				ackToTroll.payload.SEQ = datagramFromTroll.payload.SEQ;
 				ackToTroll.payload.size = 0;
 				ackToTroll.checksum = crc((void*)&ackToTroll.payload, sizeof(ackToTroll.payload), 0);
 				// send acknowledgement for data
 				bytesSent = sendto(socketToTroll, (void*)&ackToTroll, sizeof(ackToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
-				if (bytesSent < 0) {
-					printf("Error: Unable to send ack for packet %d to troll!\n", ackToTroll.payload.SEQ);
-				}
 				printf("Ack sent for %d\n", datagramFromTroll.payload.SEQ);
 				if((inWindow(datagramFromTroll.payload.SEQ, receivingBuffer.base) && receivingBuffer.ackBuffer[datagramFromTroll.payload.SEQ] != 0)) {
-//				if (receivingBuffer.ackBuffer[datagramFromTroll.payload.SEQ] != 0 && receivingBuffer.base <= datagramFromTroll.payload.SEQ) {
-					receivingBuffer.packetArray[datagramFromTroll.payload.SEQ] = datagramFromTroll;
-					receivingBuffer.ackBuffer[datagramFromTroll.payload.SEQ] = 0;
+					if (datagramFromTroll.payload.SEQ != -1) {
+						receivingBuffer.ackBuffer[datagramFromTroll.payload.SEQ] = 0;
+						receivingBuffer.packetArray[datagramFromTroll.payload.SEQ] = datagramFromTroll;
+					}
 				}
 				if (receivingBuffer.base == datagramFromTroll.payload.SEQ) {
 					printf("Base = SEQ = %d\n", datagramFromTroll.payload.SEQ);
@@ -306,9 +284,6 @@ int main(int argc, char *argv[])
 					}
 				}
 			}
-			// store in the window
-//			memcpy(buffer, datagramFromTroll.payload.data, datagramFromTroll.payload.size);
-//			bytesSent = sendto(socketToServer, buffer, datagramFromTroll.payload.size, 0, (struct sockaddr*)&sockaddrToServer, sizeof(struct sockaddr_in));
 		}
 	}
 

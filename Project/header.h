@@ -17,8 +17,9 @@
 #define TROLL_PORT 9999
 #define SERVER_TROLL_PORT 3333
 #define BUFFER_SIZE 900
-#define WINDOW_SIZE 20
-#define CIRCULAR_BUFFER_SIZE 64
+#define WINDOW_SIZE 60
+#define CIRCULAR_BUFFER_SIZE 200
+#define SLEEP_VALUE 70000
 
 struct mainData {
 	int SEQ;
