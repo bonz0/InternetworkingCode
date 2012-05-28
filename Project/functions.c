@@ -126,37 +126,13 @@ int inWindow (int index, int base) {			// checks if an index is inside the windo
 	}
 }
 
-double getRTO(double m, int pktcntr) {
-	float a = 0, d = 3000, err;
-	const float g = 0.125;
-	const float h = 0.25;
-
-	if ( pktcntr == 0) {
-		printf("\nRTO:%f\n",rto);
-		return rto;
-	} 
-	else if(pktcntr == 1)
-	{
-		printf("Counter = 1\n");
-		a = 50;
-		if(m == 0.0) {
-			rto = 6000;
-		}
-		else {
-			printf("rto = m = %f\n", m);
-			rto = m;
-		}
-		//printf("\nRTO:%f\n",rto);
-		return rto;
-	}
-	else
-	{
-		err = m-a;
-		a = a + g * err;
-		d = d+h*(abs(err)-d);
-	}
-	rto = a + 4 * d;
-	printf("Else rto = %f\n", rto);
+double getRTO(double rtt, double* estimatedRTT, double* devRtt) {
+	const float alpha = 0.125;
+	const float beta = 0.25;
+	double rto;
+	*estimatedRTT = (1 - alpha) * (*estimatedRTT) + (alpha * rtt);
+	*devRtt = (1 - beta) * (*devRtt) + (beta * abs(rtt - *estimatedRTT));
+	rto = *estimatedRTT + 4 * (*devRtt);
 	return rto;
 }
 

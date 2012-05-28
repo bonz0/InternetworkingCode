@@ -16,14 +16,20 @@ int main(int argc, char *argv[])
 	struct timeval start, end;
 	fd_set socketReadSet, socketWriteSet;
 	int iii, rttSequenceNumber = 0;
-	double difference = 0.0;
+	double difference = 0.0, currentTimeout = 100000.0;
+	double* estimatedRtt, *devRtt;
 	CircularBuffer sendingCircularBuffer;
+	int rtoBeingCalculated = 0;
 	int serverPortSent = 0;
 	sendingCircularBuffer.head = 0;
 	sendingCircularBuffer.base = 0;
 	for (iii = 0; iii < CIRCULAR_BUFFER_SIZE; iii++) {
 		sendingCircularBuffer.ackBuffer[iii] = -1;
 	}
+	estimatedRtt = (double*)malloc(sizeof(double));
+	devRtt = (double*)malloc(sizeof(double));
+	*estimatedRtt = 20000.0;
+	*devRtt = 20000.0;
 
 	// set bits to 0
 	memset(fileSize, 0, 10);
@@ -149,7 +155,7 @@ int main(int argc, char *argv[])
 		exit(-6);
 	}
 	packetToTimer.SEQ = -2;
-	packetToTimer.timeout = 6000.0;
+	packetToTimer.timeout = 60000.0;
 	bytesSentToTimer = sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
 	while (1) {
 		FD_ZERO(&socketReadSet);
@@ -179,7 +185,7 @@ int main(int argc, char *argv[])
 					printf("Timeout occured for host IP address!\n");
 				}
 				packetToTimer.SEQ = -2;
-				packetToTimer.timeout = 6000.0;
+				packetToTimer.timeout = 60000.0;
 				sendto(socketToTroll, (void*)&datagramToTroll, sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
 				sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
 			}
@@ -196,7 +202,7 @@ int main(int argc, char *argv[])
 	
 	sendto(socketToTroll, (void*)&datagramToTroll, sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
 	packetToTimer.SEQ = -1;
-	packetToTimer.timeout = 6000.0;
+	packetToTimer.timeout = 60000.0;
 	bytesSentToTimer = sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
 	while (1) {
 		FD_ZERO(&socketReadSet);
@@ -230,6 +236,8 @@ int main(int argc, char *argv[])
 				if (bytesReceivedFromTimer > 0) {
 					printf("Timeout occured for server port!\n");
 				}
+				packetToTimer.SEQ = -1;
+				packetToTimer.timeout = 60000.0;
 				sendto(socketToTroll, (void*)&datagramToTroll, sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
 				sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
 			}
@@ -285,16 +293,19 @@ int main(int argc, char *argv[])
 					printf("Head in window!\n");
 					// set up details of packet to be sent to the timer
 					packetToTimer.SEQ = packetCount % CIRCULAR_BUFFER_SIZE;
-					packetToTimer.timeout = getRTO(difference, packetToTimer.SEQ);
-					printf("Timeout value = %f", getRTO(difference, packetToTimer.SEQ));
+					packetToTimer.timeout = currentTimeout;
+					printf("Timeout value = %f", currentTimeout, packetToTimer.SEQ);
 					// send the packet to the troll
 					bytesSentToTroll = sendto(socketToTroll, (void*)&sendingCircularBuffer.packetArray[sendingCircularBuffer.head], sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
 					if (bytesSentToTroll < 0) {
 						printf("Error: Unable to send packet %d to troll!\n", sendingCircularBuffer.head);
 					}
 					else {
-						gettimeofday(&start, NULL);
-						rttSequenceNumber = sendingCircularBuffer.head;
+//						if (!rtoBeingCalculated) {
+							gettimeofday(&start, NULL);
+//							rtoBeingCalculated = 1;
+//							rttSequenceNumber = sendingCircularBuffer.head;
+//						}
 						printf("Packet %d sent to troll!\n", sendingCircularBuffer.head);
 						// mark packet as sent
 						sendingCircularBuffer.ackBuffer[sendingCircularBuffer.head] = 1;
@@ -317,12 +328,15 @@ int main(int argc, char *argv[])
 				printf("Error: Unable to RESEND packet %d to troll!\n", packetToResend);
 			}
 			else {
-				gettimeofday(&start, NULL);
-				rttSequenceNumber = packetToResend;
+//				if (!rtoBeingCalculated) {
+					gettimeofday(&start, NULL);
+//					rtoBeingCalculated = 1;
+//					rttSequenceNumber = packetToResend;
+//				}
 				sendingCircularBuffer.ackBuffer[packetToResend] = 1;
 				printf("Packet %d RESENT to troll!\n", packetToResend);
 				packetToTimer.SEQ = packetToResend;
-				packetToTimer.timeout = getRTO(difference, packetToResend);
+				packetToTimer.timeout = currentTimeout;
 				printf("Timeout value: %f\n", packetToTimer.timeout);
 				sendto(socketToTimer, (void*)&packetToTimer, sizeof(packetToTimer), 0, (struct sockaddr*)&sockaddrToTimer, sizeof(struct sockaddr_in));
 			}
@@ -333,8 +347,8 @@ int main(int argc, char *argv[])
 			memset(&ackFromTroll.payload, 0, sizeof(ackFromTroll.payload));
 			recvfrom(socketFromTroll, (void*)&ackFromTroll, sizeof(ackFromTroll), 0, (struct sockaddr*)&sockaddrFromTroll, &fromLen);
 			receivedChecksum = crc((void*)&ackFromTroll.payload, sizeof(ackFromTroll.payload), 0);
-			gettimeofday(&end, NULL);
-			difference = timeval_diff(&end, &start);
+//			gettimeofday(&end, NULL);
+//			difference = timeval_diff(&end, &start);
 			if (receivedChecksum != ackFromTroll.checksum) {
 				printf("Error: Error in received acknowledgement!\n");
 			}
@@ -342,6 +356,13 @@ int main(int argc, char *argv[])
 				if (ackFromTroll.payload.SEQ == -1) {
 					continue;
 				}
+//				if ((ackFromTroll.payload.SEQ == rttSequenceNumber) && rtoBeingCalculated) {
+					gettimeofday(&end, NULL);
+					difference = timeval_diff(&end, &start);
+					currentTimeout = getRTO(difference, estimatedRtt, devRtt);
+//					rtoBeingCalculated = 0;
+					printf("\n\n\nRTT VALUE for %d = %f\nTimeout value = %f\n\n", ackFromTroll.payload.SEQ, difference, currentTimeout);
+//				}
 				printf("ACK received for SEQ = %d\n", ackFromTroll.payload.SEQ);
 				packetToTimer.SEQ = ackFromTroll.payload.SEQ;
 				packetToTimer.timeout = 0.0;
@@ -365,15 +386,18 @@ int main(int argc, char *argv[])
 					for (iii = sendingCircularBuffer.base; iii < (sendingCircularBuffer.base + WINDOW_SIZE) % CIRCULAR_BUFFER_SIZE; iii++) {		// send all unsent packets in newly moved window
 						if (sendingCircularBuffer.ackBuffer[iii] == 0) {
 							packetToTimer.SEQ = sendingCircularBuffer.packetArray[iii].payload.SEQ;
-							packetToTimer.timeout = 6000.0;
+							packetToTimer.timeout = currentTimeout;
 							// send the packet to the troll
 							bytesSentToTroll = sendto(socketToTroll, (void*)&sendingCircularBuffer.packetArray[iii], sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
 							if (bytesSentToTroll < 0) {
 								printf("Error: Unable to send packet %d to troll!\n", sendingCircularBuffer.packetArray[iii].payload.SEQ);
 							}
 							else {
-								gettimeofday(&start, NULL);
-								rttSequenceNumber = sendingCircularBuffer.packetArray[iii].payload.SEQ;
+//								if (!rtoBeingCalculated) {
+									gettimeofday(&start, NULL);
+//									rtoBeingCalculated = 1;
+//									rttSequenceNumber = sendingCircularBuffer.packetArray[iii].payload.SEQ;
+//								}
 								printf("Packet %d sent to troll due to window movement!\n", sendingCircularBuffer.packetArray[iii].payload.SEQ);
 								// mark packet as sent
 								sendingCircularBuffer.ackBuffer[iii] = 1;
@@ -389,15 +413,18 @@ int main(int argc, char *argv[])
 					for (iii = sendingCircularBuffer.base; iii < CIRCULAR_BUFFER_SIZE; iii++) {
 						if (sendingCircularBuffer.ackBuffer[iii] == 0) {
 							packetToTimer.SEQ = sendingCircularBuffer.packetArray[iii].payload.SEQ;
-							packetToTimer.timeout = 6000.0;
+							packetToTimer.timeout = currentTimeout;
 							// send the packet to the troll
 							bytesSentToTroll = sendto(socketToTroll, (void*)&sendingCircularBuffer.packetArray[iii], sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
 							if (bytesSentToTroll < 0) {
 								printf("Error: Unable to send packet %d to troll!\n", sendingCircularBuffer.packetArray[iii].payload.SEQ);
 							}
 							else {
-								gettimeofday(&start, NULL);
-								rttSequenceNumber = sendingCircularBuffer.packetArray[iii].payload.SEQ;
+//								if (!rtoBeingCalculated) {
+									gettimeofday(&start, NULL);
+//									rtoBeingCalculated = 1;
+//									rttSequenceNumber = sendingCircularBuffer.packetArray[iii].payload.SEQ;
+//								}
 								printf("Packet %d sent to troll due to window movement 1!\n", sendingCircularBuffer.packetArray[iii].payload.SEQ);
 								// mark packet as sent
 								sendingCircularBuffer.ackBuffer[iii] = 1;
@@ -409,15 +436,18 @@ int main(int argc, char *argv[])
 					for (iii = 0; iii < (sendingCircularBuffer.base + WINDOW_SIZE) % CIRCULAR_BUFFER_SIZE; iii++) {
 						if (sendingCircularBuffer.ackBuffer[iii] == 0) {
 							packetToTimer.SEQ = sendingCircularBuffer.packetArray[iii].payload.SEQ;
-							packetToTimer.timeout = 6000.0;
+							packetToTimer.timeout = currentTimeout;
 							// send the packet to the troll
 							bytesSentToTroll = sendto(socketToTroll, (void*)&sendingCircularBuffer.packetArray[iii], sizeof(datagramToTroll), 0, (struct sockaddr*)&sockaddrToTroll, sizeof(struct sockaddr_in));
 							if (bytesSentToTroll < 0) {
 								printf("Error: Unable to send packet %d to troll!\n", sendingCircularBuffer.packetArray[iii].payload.SEQ);
 							}
 							else {
-								gettimeofday(&start, NULL);
-								rttSequenceNumber = sendingCircularBuffer.packetArray[iii].payload.SEQ;
+//								if (!rtoBeingCalculated) {
+									gettimeofday(&start, NULL);
+//									rtoBeingCalculated = 1;
+//									rttSequenceNumber = sendingCircularBuffer.packetArray[iii].payload.SEQ;
+//								}
 								printf("Packet %d sent to troll due to window movement 2!\n", sendingCircularBuffer.packetArray[iii].payload.SEQ);
 								// mark packet as sent
 								sendingCircularBuffer.ackBuffer[iii] = 1;

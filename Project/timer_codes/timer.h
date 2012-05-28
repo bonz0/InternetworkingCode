@@ -12,7 +12,7 @@
 #define TIMER_PORT 6666			// Port on which timer is listening
 #define TCPD_TIMER_PORT 5555		// Port that the TCPD_CLIENT uses to communicate with the timer
 #define LOCALHOST "127.0.0.1"
-#define DECREMENT_VALUE 1000
+#define DECREMENT_VALUE 5000
 
 //timer_node
 typedef struct timer_node{

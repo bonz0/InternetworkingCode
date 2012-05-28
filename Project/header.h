@@ -7,6 +7,7 @@
 #include <netinet/in.h>
 #include <time.h>
 #include <arpa/inet.h>
+#include <math.h>
 
 #define LOCALHOST "127.0.0.1"
 #define TCPD_CLIENT_PORT 7777
@@ -17,9 +18,9 @@
 #define TROLL_PORT 9999
 #define SERVER_TROLL_PORT 3333
 #define BUFFER_SIZE 900
-#define WINDOW_SIZE 60
-#define CIRCULAR_BUFFER_SIZE 200
-#define SLEEP_VALUE 70000
+#define WINDOW_SIZE 20
+#define CIRCULAR_BUFFER_SIZE 64
+#define SLEEP_VALUE 200000
 
 struct mainData {
 	int SEQ;
@@ -58,4 +59,4 @@ int RECV(int, void *, int, unsigned int, struct sockaddr*, int*);
 int windowWrappedAround (int);			// returns true if window has wrapped around the buffer
 int inWindow (int, int);			// returns true if index is inside the window
 void printWindow (int[]);			
-double getRTO(double, int);
+double getRTO(double, double*, double*);
