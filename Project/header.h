@@ -18,9 +18,9 @@
 #define TROLL_PORT 9999
 #define SERVER_TROLL_PORT 3333
 #define BUFFER_SIZE 900
-#define WINDOW_SIZE 20
+#define WINDOW_SIZE 20 
 #define CIRCULAR_BUFFER_SIZE 64
-#define SLEEP_VALUE 200000
+#define SLEEP_VALUE 100000
 
 struct mainData {
 	int SEQ;
@@ -56,6 +56,9 @@ typedef struct {
 long getFileSize (char* fileName);		// returns the file size
 int SEND(int, const void*, int, unsigned int, const struct sockaddr*, socklen_t);
 int RECV(int, void *, int, unsigned int, struct sockaddr*, int*);
+int CONNECT(int, struct sockaddr*, int);
+int SOCKET(int, int, int);
+void CLOSE(int);
 int windowWrappedAround (int);			// returns true if window has wrapped around the buffer
 int inWindow (int, int);			// returns true if index is inside the window
 void printWindow (int[]);			

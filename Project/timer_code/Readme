@@ -1,0 +1,36 @@
+The following files are being used to implement the file transfer protocol:
+1. ftps		//server side application which receives from tcpd_server
+2. tcpd_server	//server side TCP Daemon 
+3. troll	//simulates network like behavior
+4. ftpc		//client side application which sends to tcpd_client
+5. tcpd_client	//client side TCP Daemon
+6. functions	//defines the necessary functions like SEND,RECV and CLOSE
+7. tcpd.h	//declaration of the functions and packet structures
+8. timer.h	// declaration of the functions and packet structures used by the timer
+9. timerfunctions.c	// implementation of the delta list using doubly linked list.
+10. timerprocess.c	// main function of the timer process through which the timer communicates with the tcpd_client
+
+To Compile:
+make clean
+make
+
+To Execute:
+On the server side
+./ftps <remote-port>
+./tcpd_server
+
+On the client side
+./troll -b -s25 -x0 8747		// troll will listen on port 8747 only. troll delay set to 25ms. 
+./tcpd_client
+./ftpc <remote-ip-address> <remote-port> <file>
+./timerprocess
+
+Packet Formats:
+The packet format used is packet1 defined in tcpd.h. Each packet1 contains Struct sockaddr_in followed by payload which is inturn a Struct data type. The payload Struct contains the remote port number, remote ip address and the data. Note that packet1 begins with Struct sockaddr_in so packet1 is already in the format needed by the troll process.The packets exchanged between tcpd_client and the timer process have their format defined in both timer.h and tcpd.h.
+
+
+Flow of Data:
+The ftpc process will create packet1 as defined in tcpd.h and send this packet1 to SEND function which will inturn send the payload part of packet1 to tcpd_client. The first packet1 send by ftpc only contains the file_size and the file_name. The following packets contain actual data read from the file to be transferred. The payload part of packet1 is serialized by the SEND function before it forwards it to tcpd_client process. When tcpd_client receives this serialized payload, it first deserializes it and then creates a new packet1 by setting the ip address equal to the remote ip address so that troll can forward this packet1 to tcpd_server. This new packet1 is forwarded to troll as the previous line mentions. The troll process indeed forwards it to tcpd_server after delaying the packet by 25ms. When troll's forwarded packet arrives at tcpd_server, the server ignores the first sizeof(Struct sockaddr_in) bytes and deserializes the remaining bytes to determine the port number on which ftps is expecting data. It then forwards the data part to this port number. The data finally arrives at the ftps process which writes it to the newly created file. FTIP,FTOP,TRIP,TROP,TIIP and TIOP have fixed values in tcpd.h. FTIP AND FTOP are used for communication between ftpc and tcpd_client processes. TRIP is used for communication between tcpd_client and troll processes.TROP is the port at which tcpd_server is expecting the data. TIIP and TIOP are used for communication between tcpd_client and timer process. To avoid any loss of packets due to unreliable underlying UDP connection, ftpc sleeps for 10ms between sending each packet1 packet. 
+
+Communcation between timer and tcpd_client:
+when tcpd_client forwards the packet to troll,it informs the timer to add a new node into the delta list with proper sequence number and timeout value. The timer process continously decrements the timeout value of the first node and when the value goes below zero it removes that node from the delta list and informs tcpd_client, the sequence number of the packet for which time out just occured. Since tcpd_server does not send back an ack for properly received packet,the timer process will timeout for every packet tcpd_client forwards to the troll.tcpd_client will simply ignore the timer's notification about the timeout event.

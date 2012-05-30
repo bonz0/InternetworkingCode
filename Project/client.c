@@ -6,11 +6,8 @@ int main(int argc, char *argv[])
 {
 	int clientToTCPDClientSocket;
 	struct sockaddr_in serverAddress;
-	struct hostent *he;
-	struct in_addr **addr_list;
 	int bytesSent, bytesRead;
-	char buffer[900], fileName[20], fileSize[10], serverIPAddress[15], serverPort[5], hostName[128], hostIpAddress[15];
-	struct timespec time1, time2;
+	char buffer[900], fileName[20], fileSize[10], serverIPAddress[15], serverPort[5];
 	int i;
 	
 	// If argument count doesn't match
@@ -32,7 +29,7 @@ int main(int argc, char *argv[])
 	sprintf(fileSize, "%ld", getFileSize(argv[3]));
 	printf("File size: %s\n", fileSize);
 	
-	gethostname(hostName, sizeof(hostName));
+/*	gethostname(hostName, sizeof(hostName));
 	if((he = gethostbyname(hostName)) == NULL) {
 		printf("Unable to get host ip address by name!\n");
 		exit(-3);
@@ -40,7 +37,7 @@ int main(int argc, char *argv[])
 	addr_list = (struct in_addr **)he->h_addr_list;
 	strcpy(hostIpAddress, inet_ntoa(*addr_list[0]));
 	printf("%s\n", hostIpAddress);
-
+*/
 	// read from file
 	FILE* filePointer = fopen(fileName, "r");
 	if (filePointer < 0) {
@@ -49,7 +46,7 @@ int main(int argc, char *argv[])
 	}
 
 	// Open client socket to communicate with server
-	clientToTCPDClientSocket = socket(AF_INET, SOCK_DGRAM, 0);
+	clientToTCPDClientSocket = SOCKET(AF_INET, SOCK_STREAM, 0);
 	if (clientToTCPDClientSocket < 0) {
 		perror("Error: Unable to open socket!\n");
 		exit(-3);
@@ -60,6 +57,12 @@ int main(int argc, char *argv[])
 	serverAddress.sin_port = htons(TCPD_CLIENT_PORT);
 	serverAddress.sin_addr.s_addr = inet_addr(LOCALHOST);
 	printf("Sending to server @%s:%d\n", serverIPAddress, atoi(serverPort));
+
+	if(CONNECT(clientToTCPDClientSocket, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) < 0) {
+		close(clientToTCPDClientSocket);
+		printf("Error: Unable to connect to server!\n");
+		exit(-4);
+	}
 
 	// Send server IP address
 	bytesSent = SEND(clientToTCPDClientSocket, serverIPAddress, sizeof(serverIPAddress), 0, (struct sockaddr*)&serverAddress, sizeof(struct sockaddr_in));
@@ -112,7 +115,7 @@ int main(int argc, char *argv[])
 
 	// close file and socket
 	fclose(filePointer);
-	close(clientToTCPDClientSocket);
+	CLOSE(clientToTCPDClientSocket);
 
 	return 0;
 }

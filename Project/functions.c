@@ -110,6 +110,18 @@ int RECV (int sockfd, void* buf, int len, unsigned int flags, struct sockaddr* f
 	return recvfrom(sockfd, buf, len, flags, from, fromlen);
 }
 
+int CONNECT(int socket, struct sockaddr* socketAddr, int size) {
+	return socket;
+}
+
+int SOCKET(int domain, int type, int protocol) {
+	return socket(AF_INET, SOCK_DGRAM, 0);
+}
+
+void CLOSE(int socket) {
+	close(socket);
+}
+
 int windowWrappedAround (int base) {				// checks if the window has wrapped around the buffer or not
 	if (base == (CIRCULAR_BUFFER_SIZE - WINDOW_SIZE)) {
 		return 0;
